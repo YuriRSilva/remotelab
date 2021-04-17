@@ -1,0 +1,18 @@
+#cenários PPPoE com configuração wan via OMCI
+pppoe 1001 cianet cianet
+pppoe 2000 cianet cianet
+
+#cenários DHCP com configuração wan via OMCI
+dhcp 1001
+dhcp 1000
+
+#cenários IP estático com configuração wan via OMCI
+static 1010 192.168.2.40 255.255.255.0 192.168.2.1 8.8.8.8 8.8.4.4
+
+
+#cenários Bridge SFU com configuração wan via OMCI
+sfu 1001 untagged
+
+#cenários router HGU - para configuração manual da wan
+hgu 1001
+
