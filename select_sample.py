@@ -2,7 +2,8 @@ import subprocess
 import re
 from tabulate import tabulate
 
-poolint = "eth1"  # Network card that will be used to create the vlan subinterfaces
+poolint = 'eth1'  # Network card that will be used to create the vlan subinterfaces
+poolindex = '1'  # what file will be used. Example: 1 = samples1 , 2 = samples2 and so on
 
 
 def subprocess_cmd(command):
@@ -33,12 +34,15 @@ def conn_sample(sample_name, mgmt_ip, vlan_id, mode):
     # Creates a vlan subinterface on the system, using the poll interface (poolint) as master device. Then configure
     # ipv4 connection based on mode choice (dhcp or static)
 
-    subprocess_cmd(["nmcli", "connection", "add", "type", "vlan", "ifname", vlan_id, "dev", poolint, "id", vlan_id])
+    int_metric = "50"
+
+    subprocess_cmd(["nmcli", "connection", "add", "type", "vlan", "ifname", vlan_id, "dev", poolint, "id", vlan_id,
+                    "ipv4.route-metric", int_metric, "ipv6.route-metric", int_metric])
 
     if mode == 'static':
-        # Here, the static IP is defined using the management ip of the sample (mgmt_ip) as reference, then the
-        # value of the last octet is changed by adding +30 (or -30 if the result is greater than 254). this only
-        # works generates /24 addresses, which is basically the majority of default mgmt netmask for network devices.
+        # The static IP is defined using the management ip of the sample (mgmt_ip) as reference, then the
+        # value of the last octet is changed by adding +30 (or -30 if the result is greater than 254). this works
+        # for /24 addresses.
 
         ip4netadd = mgmt_ip[:mgmt_ip.rfind(".")]
         ip4host_octect = mgmt_ip[mgmt_ip.rfind(".") + 1:]
@@ -52,7 +56,7 @@ def conn_sample(sample_name, mgmt_ip, vlan_id, mode):
         subprocess_cmd(["nmcli", "device", "connect", vlan_id])
 
         print("Rede conectada na vlan " + vlan_id + " na interface " + poolint + " com endereço IPv4 estático " + ip4)
-        print("\n Acesse a amostra pelo endereço: " + "http://" +  mgmt_ip)
+        print("\n Acesse a amostra pelo endereço: " + "http://" + mgmt_ip)
 
     elif mode == "dhcp":
         # Aqui é feito a definição da interface via DHCP com a interface lan da amostra
@@ -66,30 +70,38 @@ def conn_sample(sample_name, mgmt_ip, vlan_id, mode):
 
 def list_and_configure_samples(pool):
     # le o arquivo samples1 ou samples2 (dependendo do valor em pool) e exibe na tela as opções de amostras,
-    # além de alimentar o dicionário samplelist com as informações de ip e vlans de cada amostra.
+    # além de alimentar a dicionário samplelist com as informações de ip e vlans de cada amostra.
 
     with open('samples' + str(pool), 'r', encoding='UTF-8') as samplefile:
         samplefile = samplefile.read().splitlines()
 
     samplelist = []
     sample = []
-    show_samplelist = []
-
     show_samplelist_header = ["OPÇÃO", "NOME_AMOSTRA"]
-
     option_index = 0
 
     for line in samplefile:
         line = line.split(' ')
         option_index = option_index + 1
-        samplelist.append(dict(index=str(option_index), sample_name=line[0], mgmt_ip=line[1], vlan_id=line[2]))
-    print("Lista de amostras:")
+        samplelist.append(
+            dict(
+                index=str(option_index),
+                sample_name=line[0],
+                mgmt_ip=line[1],
+                vlan_id=line[2]
+            )
+        )
 
+    print("Lista de amostras:")
     for line in samplelist:
-        show_samplelist.append(['ID ' + line['index'], line['sample_name']])
+        show_samplelist.append(
+            [
+                'ID ' + line['index'],
+                line['sample_name']
+            ]
+        )
 
     print(tabulate(show_samplelist, show_samplelist_header))
-
     selected_option = int(input('\n Digite o ID da amostra: ')) - 1
 
     con_method = 0
@@ -109,7 +121,5 @@ def list_and_configure_samples(pool):
 
     conn_sample(sample['sample_name'], sample['mgmt_ip'], sample['vlan_id'], con_method)
 
-    # conn_sample(sample["sample_name"], sample["mgmt_ip"], sample["vlan_id"], con_method)
 
-
-list_and_configure_samples("1")
+list_and_configure_samples(poolindex)
