@@ -3,6 +3,7 @@ from time import sleep
 import re
 from tabulate import tabulate
 import pandas as pd
+from paramiko_expect import SSHClientInteraction
 
 
 class G8PSX:
@@ -20,39 +21,35 @@ class G8PSX:
 
         # Method to connect to a host through SSH, run commands and return the shell output.
         # It can run a single command if the command_syntax is a string, or a sequence of commands if It is a list.
-
-        output = str
-
         try:
-            if self.ssh_client.get_transport().is_active():
-                print('Utilizando conexão já estabelecida...\n')
-        except AttributeError:
-            try:
-                print('Estabelecendo conexão SSH... host: ' + self.host + '\n')
-                self.ssh_client.connect(hostname=self.host, port=self.port, username=self.username,
-                                        password=self.password,
-                                        look_for_keys=False, allow_agent=False)
-            except:
-                print('Não foi possível estabelecer conexão SSH com o node ' + self.host)
-                raise ValueError
+            print('Estabelecendo conexão SSH... host: ' + self.host + '\n')
+            self.ssh_client.connect(hostname=self.host, port=self.port, username=self.username,
+                                    password=self.password,
+                                    look_for_keys=False, allow_agent=False)
 
-        shell = self.ssh_client.invoke_shell()
-        sleep(1)
-        shell.send('enable\n')
-        sleep(1)
-        shell.send('config\n')
-        sleep(1)
-        if isinstance(command_syntax, list):
-            for command in command_syntax:
-                shell.send(command + '\n')
-                # sleep(1)
-            output = shell.recv(100000).decode('utf-8')
-        elif isinstance(command_syntax, str):
-            shell.send(command_syntax + '\n')
-            sleep(1)
-            output = shell.recv(100000).decode('utf-8')
+            with SSHClientInteraction(self.ssh_client, timeout=5, display=False) as interact:
+                sleep(1)
+                interact.send('enable\n')
+                interact.expect(r'\w+#\s+')
+                interact.send('config\n')
+                prompt = r"\w+\(\w+\)#\s+"
+                interact.expect(prompt)
 
-        return output
+                if isinstance(command_syntax, list):
+                    for command in command_syntax:
+                        interact.send(command + '\n')
+                        interact.expect(prompt)
+
+                elif isinstance(command_syntax, str):
+                    interact.send(command_syntax + '\n')
+                    interact.expect(prompt)
+
+                output = str(interact.current_output_clean)
+            return output
+
+        except ValueError:
+            print('Não foi possível estabelecer conexão SSH com o node ' + self.host)
+            raise ValueError
 
     def output_to_list(self, command, re_matchstr=r'^  \d+'):
         output_raw = self.connect_ssh(command).splitlines()
@@ -105,9 +102,6 @@ class G8PSX:
                    'show ont-lineprofile gpon all',
                    'show srv-lineprofile gpon all',
                    'show service-port all',
-
-
-
 
                    ]
         pon_att_list = self.get_onu_info()
