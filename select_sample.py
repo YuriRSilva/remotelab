@@ -77,6 +77,7 @@ def list_and_configure_samples(pool):
 
     samplelist = []
     sample = []
+    show_samplelist = []
     show_samplelist_header = ["OPÇÃO", "NOME_AMOSTRA"]
     option_index = 0
 
@@ -102,23 +103,42 @@ def list_and_configure_samples(pool):
         )
 
     print(tabulate(show_samplelist, show_samplelist_header))
-    selected_option = int(input('\n Digite o ID da amostra: ')) - 1
 
-    con_method = 0
-    while con_method == 0:
-        print('\nSelecione o método de configuração:')
-        print("\n1-IP estático\n2-DHCP")
-        selected_mode = input('\nMétodo de configuração:')
-        if selected_mode == "1":
-            con_method = "static"
-        elif selected_mode == "2":
-            con_method = "dhcp"
+    while True:  # Gets and check the sample option
+        try:
+            selected_option = int(input('\n Digite o ID da amostra ou 0 para deletar todas as sub-interfaces:  '))
+        except ValueError:
+            print('Opção inválida')
         else:
-            print('método inválido - digite 1 ou 2')
+            if selected_option > len(samplelist) and selected_option != 0:
+                print('Opção inválida')
+            elif selected_option == 0:
+                flush_subinterfaces()
+                exit()
+            else:
+                selected_option = selected_option - 1  # This is for the input to match the list index
+                break
 
-        sample = samplelist[selected_option]
-        flush_subinterfaces()
+    print('\nSelecione o método de configuração: ')
+    print("\n1-IP estático\n2-DHCP")
 
+    while True:  # Gets and check the DHCP/STATIC option
+        try:
+            selected_mode = int(input('\nMétodo de configuração: '))
+        except ValueError:
+            print('Opção inválida')
+        else:
+            if selected_mode == 1:
+                con_method = "static"
+                break
+            elif selected_mode == 2:
+                con_method = "dhcp"
+                break
+            else:
+                print('método inválido - digite 1 ou 2')
+
+    sample = samplelist[selected_option]
+    flush_subinterfaces()
     conn_sample(sample['sample_name'], sample['mgmt_ip'], sample['vlan_id'], con_method)
 
 
