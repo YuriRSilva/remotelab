@@ -137,24 +137,20 @@ class G8PSX:
                 print('Utilizando line-profile já existente... ID: ' + line_profile_id)
                 return line_profile_id
 
-        restart = True
-        while restart:
-            restart = False
+        while True:
             for line in id_list:
                 if line[1] == str(line_profile_id):
-                    line_profile_id = line_profile_id + 1
-                    restart = True
-
-        command_list = [
-            'ont-lineprofile gpon profile-id ' + str(line_profile_id) + ' profile-name ' + line_profile_name,
-            'tcont 1 dba-profile-id 1',
-            'gem add 1 tcont 1 encrypt off',
-            'gem mapping 1 1 vlan ' + vlan_id,
-            'commit'
-            'exit'
-        ]
-        self.connect_ssh(command_list)
-        return line_profile_id
+                    line_profile_id = str(line_profile_id + 1)
+                    command_list = [
+                        'ont-lineprofile gpon profile-id ' + line_profile_id + ' profile-name ' + line_profile_name,
+                        'tcont 1 dba-profile-id 1',
+                        'gem add 1 tcont 1 encrypt off',
+                        'gem mapping 1 1 vlan ' + vlan_id,
+                        'commit'
+                        'exit'
+                    ]
+                    self.connect_ssh(command_list)
+                    return line_profile_id
 
     def set_srv_profile(self, vlan_id, type_name):
         srv_profile_id = 110
