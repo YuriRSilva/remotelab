@@ -5,7 +5,7 @@ from tabulate import tabulate
 import pandas as pd
 from paramiko_expect import SSHClientInteraction
 
-display_ssh = False  # Display the SSH inputs and outputs
+display_ssh = True  # Display the SSH inputs and outputs
 
 
 class G8PSX:
@@ -38,7 +38,7 @@ class G8PSX:
                     continue
             else:
                 try:
-                    with SSHClientInteraction(self.ssh_client, timeout=5, display=display) as interact:
+                    with SSHClientInteraction(self.ssh_client, timeout=5, display=display_ssh) as interact:
                         sleep(1)
                         interact.send('enable\n')
                         interact.expect(r'\w+#\s+')
@@ -83,7 +83,7 @@ class G8PSX:
 
         return output_list
 
-    def get_onus_info(self, pon_sn='all', printthis=False):
+    def get_onus_info(self, pon_sn='all', printthis=False, chosen_onu=None):
         # Get the registered and unregistered ONUs at the OLT, and creates a dic for each entry found. The entrys are
         # stored on a list (onulist). Each entry (dic) contains the following ONU attributes as keys: Option, port,
         # ONU_ID PON_SN, RUN_STATE, Config_State, Match_state
@@ -145,10 +145,17 @@ class G8PSX:
         if printthis:
             df = pd.DataFrame(onus)
             header = onus[0].keys()
-            print(tabulate(df, header, showindex=False))
-            return onus
+            print(tabulate(df, header, showindex=False, tablefmt='pretty'))
+            if chosen_onu is not None:
+                return onus[int(chosen_onu) - 1]['PON_SN']
+            else:
+                return onus
+
         else:
-            return onus
+            if chosen_onu is not None:
+                return onus[int(chosen_onu) - 1]['PON_SN']
+            else:
+                return onus
 
     def clear_onu_config(self, pon_sn):
         # Search and destroy ONU configuration
@@ -202,14 +209,19 @@ class G8PSX:
             'commit',
             'exit'
         ]
+
+        print(f'Criando line-prfile id {line_profile_id} e nome {line_profile_name}')
+        print(f'Parametros do line-profile: vlan: {vlan_id}')
         self.connect_ssh(command_list)
         return line_profile_id
 
-    def cfg_srv_profile(self, vlan_id, type_name):
+    def cfg_srv_profile(self, vlan_id, type_name, sfu_lan_type):
         srv_profile_id = 110
 
-        if type_name == 'sfu_trunk' or 'sfu_access':
-            srv_profile_name = 'py_' + type_name + '_' + vlan_id
+        if type_name == 'sfu' and sfu_lan_type == 'access' or None:
+            srv_profile_name = 'py_' + type_name + '_' + vlan_id + 'access'
+        elif type_name == 'sfu' and sfu_lan_type == 'trunk':
+            srv_profile_name = 'py_' + type_name + '_' + vlan_id + 'trunk'
         else:
             srv_profile_name = "py_HGU_default"
 
@@ -218,27 +230,27 @@ class G8PSX:
         for line in id_list:
             if line[2] == srv_profile_name:
                 line_profile_id = line[1]
-                print('Utilizando srv-profile já existente... ID: ' + line_profile_id)
+                print(f'Utilizando srv-profile já existente... ID: {line_profile_id}')
                 return srv_profile_id
 
         for line in id_list:
             if line[1] == str(srv_profile_id):
                 srv_profile_id = srv_profile_id + 1
 
-        if type_name == 'sfu_trunk':
-            command_list = [
-                'ont-srvprofile gpon profile-id ' + str(srv_profile_id) + ' profile-name ' + srv_profile_name,
-                'ont-port ' + 'eth ' + 'adaptive ' + 'pots ' + 'adaptive ' + 'catv ' + 'adaptive',
-                'port vlan eth 1 translation ' + vlan_id + ' user-vlan ' + vlan_id,
-                'commit',
-                'exit'
-            ]
-        elif type_name == 'sfu_access':
+        if sfu_lan_type == 'access' or None:
             command_list = [
                 'ont-srvprofile gpon profile-id ' + str(srv_profile_id) + ' profile-name ' + srv_profile_name,
                 'ont-port ' + 'eth ' + 'adaptive ' + 'pots ' + 'adaptive ' + 'catv ' + 'adaptive',
                 'port vlan eth 1 translation ' + vlan_id + ' user-vlan ' + vlan_id,
                 'port native-vlan eth 1 ' + vlan_id,
+                'commit',
+                'exit'
+            ]
+        elif sfu_lan_type == 'trunk':
+            command_list = [
+                'ont-srvprofile gpon profile-id ' + str(srv_profile_id) + ' profile-name ' + srv_profile_name,
+                'ont-port ' + 'eth ' + 'adaptive ' + 'pots ' + 'adaptive ' + 'catv ' + 'adaptive',
+                'port vlan eth 1 translation ' + vlan_id + ' user-vlan ' + vlan_id,
                 'commit',
                 'exit'
             ]
@@ -254,7 +266,8 @@ class G8PSX:
                 'commit',
                 'exit'
             ]
-
+        print(f'Criando srv-prfile id {srv_profile_id} e nome {srv_profile_name}')
+        print(f'Parametros do srv-profile: vlan: {vlan_id}, tipo: {type_name}, onu_lan: {sfu_lan_type}')
         self.connect_ssh(command_list)
         return srv_profile_id
 
@@ -271,8 +284,6 @@ class G8PSX:
                 srv_port_id = line[1]
                 return srv_port_id
 
-        print("Não foram encontradas service-ports para esta configuração")
-
         for line in srvport_list:
             if line[1] == str(srv_port_id):
                 srv_port_id = srv_port_id + 1
@@ -280,11 +291,12 @@ class G8PSX:
         srv_port_id = str(srv_port_id)
         print("Criando novo service-port com ID: " + srv_port_id + "\n")
 
-        command_list = ['service-port ' + srv_port_id + ' vlan ' + vlan_id + " gpon 0/0 port " + port + " ont " +
+        command_list = [f'vlan {vlan_id}', 'service-port ' + srv_port_id + ' vlan ' + vlan_id + " gpon 0/0 port " + port + " ont " +
                         onu_id + " gemport 1 multi-service user-vlan " + vlan_id + " tag-action translate ",
                         "service-port desc " + srv_port_id + " " + desc]
+
         self.connect_ssh(command_list)
-        print("Service-port criada")
+        print(f'Service-port criada com o id {str(srv_port_id)} para a vlan {vlan_id}')
         return
 
     def get_port_status(self, port, printthis=False):
@@ -336,50 +348,40 @@ class G8PSX:
             return 'port full'
 
     def cfg_onu(self, pon_sn, config_type, vlan_id, pppoe_username='none', pppoe_password='none', wan_ip_addr='none',
-                wan_netmask='none', wan_gateway='none', dns_1='none', dns_2='none', uni_type='none'):
+                wan_netmask='none', wan_gateway='none', dns_1='none', dns_2='none', sfu_lan_type='none'):
 
         line_profile_id = self.cfg_line_profile(vlan_id)
-        srv_profile_id = self.cfg_srv_profile(vlan_id, config_type)
+        srv_profile_id = self.cfg_srv_profile(vlan_id, config_type, sfu_lan_type)
         onu_params = self.get_onus_info(pon_sn=pon_sn)
         onu_port = onu_params[0]['PORT']
         onu_id = onu_params[0]['ONU_ID']
         wan_index = '0'
         wan_cos = '0'
 
-        if onu_id != '-':
+        if onu_id == '-':
+            onu_id = self.get_unused_onu_id(onu_port)
+            print(f'ONU desautorizada, autorizando a ONU na porta {onu_port} com o index {onu_id}...')
+        else:
             print('ONU previamente registrada. Limpando configuração prévia da ONU (unregister and register)')
             self.clear_onu_config(pon_sn)
             print('Tentando reautorizar a ONU usando o mesmo index anterior')
             old_onu_id = onu_id
-            onu_id = self.get_unused_onu_id('8', int(onu_id))
+            onu_id = self.get_unused_onu_id(port=onu_port, startid=int(onu_id))
             if onu_id == old_onu_id:
                 print('ONU será reautorizada com o index anterior')
             else:
                 print('Não foi possível reautorizar a ONU com o index antrerior, utilizando o valor: ' + onu_id)
-        else:
-            onu_id = self.get_unused_onu_id('8')
-            print(f'ONU desautorizada, autorizando a ONU na porta {onu_port} com o index {onu_id}...')
 
-        cmds = []
         auth_cmd = f'ont add {onu_port} {onu_id} sn-auth {pon_sn} ont-lineprofile-id {line_profile_id} ont-srvprofile-id {srv_profile_id}'
-        pppo_cmd = f'ont wan add {onu_port} {onu_id} {wan_index} route voice-internet pppoe username {pppoe_username} password {pppoe_password} vlan-mode tag {vlan_id} priority {wan_cos}'
-        dhcp_cmd = f'ont wan add {onu_port} {onu_id} {wan_index} route voice-internet dhcp vlan-mode tag {vlan_id} priority {wan_cos}'
-        stat_cmd = f'ont wan add {onu_port} {onu_id} {wan_index} route voice-internet static ip {wan_ip_addr} mask {wan_netmask} gateway {wan_gateway} primary-dns {dns_1} secondary-dns {dns_2} vlan-mode tag {vlan_id} priority {wan_cos}'
+        wan_cmd = ''
 
-        print(config_type)
-        if config_type in ['hgu', 'sfu']:
-            print('exec sfu or hgu')
-            cmds = ['interface gpon 0/0', auth_cmd, 'exit']
-        elif config_type == 'pppoe':
-            print('exec pppoe')
-            cmds = ['interface gpon 0/0', auth_cmd, pppo_cmd, 'exit']
+        if config_type == 'pppoe':
+            wan_cmd = f'ont wan add {onu_port} {onu_id} {wan_index} route voice-internet pppoe username {pppoe_username} password {pppoe_password} vlan-mode tag {vlan_id} priority {wan_cos}'
         elif config_type == 'dhcp':
-            print('exec dhcp')
-            cmds = ['interface gpon 0/0', auth_cmd, dhcp_cmd, 'exit']
+            wan_cmd = f'ont wan add {onu_port} {onu_id} {wan_index} route voice-internet dhcp vlan-mode tag {vlan_id} priority {wan_cos}'
         elif config_type == 'static':
-            print('exec static')
-            cmds = ['interface gpon 0/0', auth_cmd, stat_cmd, 'exit']
+            wan_cmd = f'ont wan add {onu_port} {onu_id} {wan_index} route voice-internet static ip {wan_ip_addr} mask {wan_netmask} gateway {wan_gateway} primary-dns {dns_1} secondary-dns {dns_2} vlan-mode tag {vlan_id} priority {wan_cos}'
 
-        self.connect_ssh(cmds)
+        self.connect_ssh(['interface gpon 0/0', auth_cmd, wan_cmd, 'exit'])
         self.cfg_srv_port(vlan_id, onu_port, onu_id)
         print('Comandos de provisionamento executados')

@@ -1,6 +1,7 @@
 import subprocess
 import re
 from tabulate import tabulate
+import sys
 
 poolint = 'eth1'  # Network card that will be used to create the vlan subinterfaces
 poolindex = '1'  # what file will be used. Example: 1 = samples1 , 2 = samples2 and so on
@@ -142,4 +143,8 @@ def list_and_configure_samples(pool):
     conn_sample(sample['sample_name'], sample['mgmt_ip'], sample['vlan_id'], con_method)
 
 
-list_and_configure_samples(poolindex)
+try:
+    if sys.argv[1] == '-c':
+        flush_subinterfaces()
+except IndexError:
+    list_and_configure_samples('1')
